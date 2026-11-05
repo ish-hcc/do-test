@@ -3,6 +3,8 @@
 #
 #   07-migrate.sh <ns> <csp> [--yes]      전 단계. --yes 없으면 대상 VM 을 만드는 8단계 앞에서 멈춘다
 #   07-migrate.sh <ns> <csp> status        17단계(grasshopper 상태)만 다시 본다
+#   07-migrate.sh <ns> <csp> verify        대상 VM 에 SSH 로 들어가 서비스 응답을 본다 (14단계).
+#       대상 보안 그룹에 서비스 포트가 옮겨지지 않아 밖에서는 안 보인다 (2026-11-06 실측: 22 만 열림)
 #
 # 단계별 응답은 RUN_DIR/mig-<ns>-<csp>/NN-*.json 에 남고, 다시 돌리면 이미 있는 단계는 건너뛴다.
 # 앞 단계를 다시 하려면 그 파일과 뒤 파일을 지운다.
@@ -42,6 +44,20 @@ run_wf() { # wf outfile
 step() { [ -s "$D/$1" ] && { log "$1 있음, 건너뜀"; return 1; }; return 0; }
 jid() { jq -r '.id // .data.id // .ID // empty' "$1"; }
 
+if [ "$sub" = verify ]; then
+  use_cm_tb
+  infra=$(cat "$D/08-infra-id" 2>/dev/null) || die "08-infra-id 가 없습니다 (8단계 먼저)"
+  vkey=$(node_ssh_key "$MIG_NS" "$infra")
+  tb GET "/ns/$MIG_NS/infra/$infra" | jq -r '.node[] | select(.status=="Running") | "\(.id) \(.publicIP) \(.nodeUserName)"' \
+    | while read -r id nip nuser; do
+      printf '%-50s ' "$id"
+      # shellcheck disable=SC2016
+      ssh_node "$vkey" "$nuser" "$nip" 'for p in 80 8080; do printf "%s:%s " $p $(curl -s -o /dev/null -m 5 -w %{http_code} http://localhost:$p/); done;
+        for s in apache2 nginx mariadb nfs-server tomcat; do [ "$(systemctl is-active $s 2>/dev/null)" = active ] && printf "%s " $s; done;
+        sudo docker ps --format "{{.Names}}" 2>/dev/null | tr "\n" " "; echo' 2>&1 | tail -1 || echo "접속 실패"
+    done
+  exit 0
+fi
 if [ "$sub" = status ]; then
   api 8084 GET "/grasshopper/software/migrate/status" "$D/17-status-list.json"
   infra=$(cat "$D/08-infra-id" 2>/dev/null || echo "")
