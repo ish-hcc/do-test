@@ -40,6 +40,15 @@
 | tumblebug 객체 키에 `/` 를 넣으면 presignedUrl 이 실패 | 경로 파라미터로 받아서 `/` 가 경로로 갈린다 | 키를 평평하게 쓴다 (`a.txt`, `b.bin`) | 2026-11-06 실측 |
 | 로컬에서 만든 이미지로 재기동했는데 옛 이미지가 뜬다 | cm-mayfly compose 의 `pull_policy: always` 가 Docker Hub 태그를 다시 받는다 | `docker compose -p cloud-migrator up -d --no-deps --pull never <svc>`. 프로젝트 이름은 `cloud-migrator` (`-p` 없이 돌리면 openbao 컨테이너 이름이 충돌) | 2026-11-06 실측 |
 | 버전 관리 켠 버킷이 안 지워진다 | 객체 버전이 남아 있다 | `GET .../versions` 의 versionId 마다 `DELETE .../versions/{key}?versionId=` 뒤 버킷 삭제 | 2026-11-06 실측 |
+| MinIO 설치가 `401 UNAUTHORIZED` | MinIO 가 커뮤니티 배포물을 내렸다 (quay.io 401, Docker Hub 없음, dl.min.io 410) | `install-minio-container.sh` 가 GitHub 릴리즈 태그를 VM 안에서 빌드한다 | 2026-11-06 실측 |
+| vm4 `Failed to connect to MariaDB` | grasshopper 예제가 `docker exec -it` 를 써서 TTY 없이 실패 | 03 이 스크립트를 복사해 `ssh -tt` 로 돌린다. grasshopper 쪽 수정은 그 repo 몫 | 2026-11-06 실측 |
+| SW 이관 run 이 `dag_id is not exist` 로 500 | 워크플로를 만든 직후라 Airflow 가 DAG 파일을 아직 못 읽음 | 07 의 run_wf 가 15초 간격으로 다시 한다 | 2026-11-06 실측 |
+| 대상 VM 의 80·8080 이 밖에서 안 열림 | 대상 보안 그룹에 22 만 있다. 원본 VM 의 서비스 포트가 옮겨지지 않는다 | `07-migrate.sh <ns> <csp> verify` 로 VM 안에서 본다 | 2026-11-06 실측 |
+| collect 그룹 rdbms/refined 가 비어 있다 | 노드에 깔리는 agent 가 GitHub 최신 릴리즈라 listeners 수집(honeybee 078c129, 태그 없음)이 없다 | honeybee 릴리즈 뒤에 다시 본다 | 2026-11-06 실측 |
+| alibaba 생성이 `Forbidden.RiskControl` | Alibaba 계정 위험 통제 | 계정 쪽 해제 필요. 시험 표에 "계정 차단" | 2026-11-06 실측 |
+| azure 4대 중 3대 Failed `OperationNotAllowed` | koreacentral FSv2 코어 할당량 10 | 할당량 증설 또는 대수 줄이기 | 2026-11-06 실측 |
+| tencent·kt 연결이 없다 | credentials 에 두 CSP 가 없다 | credentials 에 넣는다 | 2026-11-06 실측 |
+| 실행 중인 스크립트를 고치면 `예기치 않은 토큰` | bash 는 스크립트를 읽어 가며 돈다 | 돌고 있는 동안 scripts/ 를 고치지 않는다 | 2026-11-06 실측 |
 | KT 대상 추천 실패 | beetle 이 KT 를 지원 목록에서 뺐다 | 시험 표에 "미지원" 으로 적는다 | cm-beetle `infra.go:66-76` |
 
 ## 정리
