@@ -3,6 +3,7 @@
 #
 #   03-install-sources.sh <ns>            전 노드 병렬 설치. 로그는 RUN_DIR/install-<ns>-<이름>.log
 #   03-install-sources.sh <ns> check      설치 결과만 확인 (서비스·포트)
+#   ONLY="minio vm4-container" 03-install-sources.sh <ns>   그 노드만 다시 설치
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 use_boot_tb
@@ -24,9 +25,13 @@ install_one() { # idx name scripts...
     if [[ $f == @* ]]; then src="$SKILL_DIR/scripts/source/${f#@}"; else src="$GH_SCRIPTS/$f"; fi
     [ -f "$src" ] || { echo "$src 없음"; return 1; }
     echo "=== $(date +%T) $name($ip) $f"
-    # 스크립트를 stdin 으로 넘긴다. -n 을 쓰지 않는 유일한 자리라 입력은 이 파일뿐이다.
-    timeout 1800 ssh -i "$key" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 \
-      -o LogLevel=ERROR "$user@$ip" 'sudo bash -s' < "$src" || { rc=$?; echo "!!! $f 실패 rc=$rc"; return $rc; }
+    # 스크립트를 노드에 복사한 뒤 TTY 를 붙여 돌린다. grasshopper 예제 중 `docker exec -it` 를 쓰는 것
+    # (container/mariadb/install-mariadb-container.sh) 이 TTY 없이는 매번 실패한다 (2026-11-06 실측).
+    local rf; rf="/tmp/cmtest-$(basename "$f")"
+    timeout 120 scp -q -i "$key" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 \
+      -o LogLevel=ERROR "$src" "$user@$ip:$rf" || { rc=$?; echo "!!! $f 복사 실패 rc=$rc"; return $rc; }
+    timeout 1800 ssh -tt -i "$key" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=15 \
+      -o LogLevel=ERROR "$user@$ip" "sudo bash $rf; rc=\$?; rm -f $rf; exit \$rc" < /dev/null || { rc=$?; echo "!!! $f 실패 rc=$rc"; return $rc; }
   done
   echo "=== $(date +%T) $name 완료"
 }
@@ -43,6 +48,8 @@ case "$mode" in
     log "$ns: $(source_vm_count)대에 병렬 설치. 진행은 $RUN_DIR/install-$ns-*.log"
     pids=()
     while read -r idx name purpose ports scripts; do
+      # ONLY="minio vm4-container" 처럼 주면 그 노드만 다시 설치한다
+      if [ -n "${ONLY:-}" ] && [[ " $ONLY " != *" $name "* ]]; then continue; fi
       # shellcheck disable=SC2086
       install_one "$idx" "$name" "$purpose" "$ports" $scripts > "$RUN_DIR/install-$ns-$name.log" 2>&1 &
       pids+=("$!:$name")
