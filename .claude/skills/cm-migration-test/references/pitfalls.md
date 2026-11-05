@@ -49,6 +49,9 @@
 | azure 4대 중 3대 Failed `OperationNotAllowed` | koreacentral FSv2 코어 할당량 10 | 할당량 증설 또는 대수 줄이기 | 2026-11-06 실측 |
 | tencent·kt 연결이 없다 | credentials 에 두 CSP 가 없다 | credentials 에 넣는다 | 2026-11-06 실측 |
 | 실행 중인 스크립트를 고치면 `예기치 않은 토큰` | bash 는 스크립트를 읽어 가며 돈다 | 돌고 있는 동안 scripts/ 를 고치지 않는다 | 2026-11-06 실측 |
+| grasshopper 가 `finished` 인데 패키지가 없다 | grasshopper 상태가 설치 결과를 반영하지 않는 경우가 있다. nhn 대상 vm3 에서 `mariadb-server=finished` 인데 dpkg 에 없고 WordPress 가 500 | 17 상태만 보지 말고 `07-migrate.sh verify` 로 VM 안을 본다. 원인은 grasshopper 쪽 확인 필요 | 2026-11-06 실측 |
+| vm3 `apache2=failed` | 대부분은 설치 뒤 서비스가 active 라 실제로는 동작한다. gcp 대상 1회는 dpkg 상태 `iF`(postinst 미완)로 apache2 가 꺼져 있었다 | verify 로 active 인지 본다. iF 원인은 확인 필요 | 2026-11-06 실측 |
+| nhn 대상에서 `amazon-ssm-agent`·`lxd` failed | AWS Source 에서 수집한 AWS 전용·snap 패키지를 다른 CSP 로 옮기려 한다 | 실패해도 서비스에는 영향 없음. 이관 목록에서 빼는 것은 grasshopper 쪽 | 2026-11-06 실측 |
 | KT 대상 추천 실패 | beetle 이 KT 를 지원 목록에서 뺐다 | 시험 표에 "미지원" 으로 적는다 | cm-beetle `infra.go:66-76` |
 
 ## 정리

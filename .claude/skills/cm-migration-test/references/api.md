@@ -47,17 +47,17 @@ CSP 수집과 RDBMS 수집은 v0.6.3 까지의 릴리즈에 없다. main 을 빌
 
 | # | 호출 | 상태 |
 |---|------|------|
-| 4 | damselfly `POST /damselfly/onpremmodel` `{userId, userModelName, description, isInitUserModel:true, onpremiseInfraModel}` | 검증 안 됨 |
-| 5 | beetle `POST /beetle/recommendation/infra?desiredCsp=&desiredRegion=&limit=1` `{desiredCspAndRegionPair:{csp,region}, onpremiseInfraModel}`. 응답은 `{success, data:[후보...]}` | 검증 안 됨. 응답 형식은 소스 (`cm-beetle model/response.go:35`) |
-| 6 | damselfly `POST /damselfly/cloudmodel` `{..., cloudInfraModel:<후보>}` | 검증 안 됨 |
-| 7 | cicada `POST /cicada/workflow`. task 는 `damselfly_task_get_cloud_infra_model` → `beetle_task_infra_migration` (`nsId=mig01`, `nameSeed`) | 검증 안 됨. `nameSeed` 를 query_params 로 넘기는 것은 이 skill 이 더한 것이다 (같은 ns 에 CSP 여러 개를 만들 때 이름이 겹치지 않게) |
-| 8 | cicada `POST /cicada/workflow/{wfId}/run`, 진행은 `GET /cicada/workflow/{wfId}/runs` | 검증 안 됨 |
-| 8' | beetle `GET /beetle/migration/ns/mig01/infra` | 검증 안 됨 |
-| 11 | damselfly `POST /damselfly/softwaremodel/source` `{..., sourceSoftwareModel}` | 검증 안 됨 |
-| 13 | grasshopper `POST /grasshopper/software/migration_list` `{sourceSoftwareModel}` → targetSoftwareModel | 검증 안 됨 |
-| 14 | damselfly `POST /damselfly/softwaremodel/target` | 검증 안 됨. 본문 형식이 문서에 생략돼 있다 |
-| 15-16 | cicada 워크플로: `damselfly_task_get_target_software_model` → `grasshopper_task_software_migration` (`nsId`, `infraId`) | 검증 안 됨 |
-| 17 | grasshopper `GET /grasshopper/software/migrate/status` → `/status/{executionId}` 의 `target_mappings[].status` | 문서(ETRI 판). 예시 결과에 `finished with error` 가 있다 |
+| 4 | damselfly `POST /damselfly/onpremmodel` `{userId, userModelName, description, isInitUserModel:true, onpremiseInfraModel}` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 5 | beetle `POST /beetle/recommendation/infra?desiredCsp=&desiredRegion=&limit=1` `{desiredCspAndRegionPair:{csp,region}, onpremiseInfraModel}`. 응답은 `{success, data:[후보...]}` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공). 4대 모두 matched |
+| 6 | damselfly `POST /damselfly/cloudmodel` `{..., cloudInfraModel:<후보>}` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 7 | cicada `POST /cicada/workflow`. task 는 `damselfly_task_get_cloud_infra_model` → `beetle_task_infra_migration` (`nsId=mig01`, `nameSeed`) | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공). `nameSeed` 를 query_params 로 넘기는 것은 이 skill 이 더한 것이다 (같은 ns 에 CSP 여러 개를 만들 때 이름이 겹치지 않게) |
+| 8 | cicada `POST /cicada/workflow/{wfId}/run`, 진행은 `GET /cicada/workflow/{wfId}/runs` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공). 워크플로를 만든 직후 run 하면 500 `dag_id is not exist` 가 날 수 있어 `run_wf` 가 다시 한다 |
+| 8' | beetle `GET /beetle/migration/ns/mig01/infra` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 11 | damselfly `POST /damselfly/softwaremodel/source` `{..., sourceSoftwareModel}` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 13 | grasshopper `POST /grasshopper/software/migration_list` `{sourceSoftwareModel}` → targetSoftwareModel | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 14 | damselfly `POST /damselfly/softwaremodel/target` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공). 본문 형식은 `07-migrate.sh` 가 만드는 것 |
+| 15-16 | cicada 워크플로: `damselfly_task_get_target_software_model` → `grasshopper_task_software_migration` (`nsId`, `infraId`) | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공) |
+| 17 | grasshopper `GET /grasshopper/software/migrate/status` → `/status/{executionId}` 의 `target_mappings[].status` | 2026-11-06 실측 (aws gcp nhn ncp 대상 8조합 성공). `finished` 라도 실제로 설치 안 된 경우가 있어 `07-migrate.sh verify` 로 VM 안을 본다 |
 
 문서의 7단계 예시에 있던 `install_docker`(run_script) task 와 `trigger_email` task 는 넣지 않았다. 메일은 SMTP 설정이 필요하고, docker 설치는 SW 이관이 맡는다.
 
