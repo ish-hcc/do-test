@@ -47,8 +47,8 @@ resolve() { # vcpu mem -> "specId imageId"
 }
 
 ensure_ns() {
+  # 네임스페이스는 tumblebug 안의 기록이라 CSP 과금이 없다. Review 가 네임스페이스를 요구하므로 --yes 없이 만든다
   tb GET "/ns/$1" >/dev/null 2>&1 && return
-  require_yes "네임스페이스 $1 생성"
   tb POST /ns "$(jq -n --arg n "$1" '{name:$n, description:"cm-migration-test"}')" >/dev/null
   log "네임스페이스 $1 생성"
 }
@@ -60,11 +60,11 @@ create() { # ns infra size vcpu mem disk
     '{name:$n, installMonAgent:"no", policyOnPartialFailure:"continue",
       nodeGroups:[{name:$g, nodeGroupSize:$s, specId:$sp, imageId:$im, rootDiskSize:$d}]}')
   log "요청 본문: $(jq -c . <<<"$body")"
+  ensure_ns "$ns"
   review=$(tb POST "/ns/$ns/infraDynamicReview" "$body")
   log "검토: overallStatus=$(jq -r '.overallStatus' <<<"$review") creationViable=$(jq -r '.creationViable' <<<"$review")"
   jq '{overallStatus, creationViable, estimatedCost: (.estimatedCost // null), recommendations: (.recommendations // null)}' <<<"$review"
   [ "$(jq -r '.creationViable' <<<"$review")" = true ] || die "생성 불가 판정입니다. 스펙·이미지를 바꿉니다"
-  ensure_ns "$ns"
   require_yes "$ns/$infra 에 ${size}대 생성 (${spec})"
   TB_TIMEOUT=1800 tb POST "/ns/$ns/infraDynamic" "$body" > "$RUN_DIR/$ns-$infra.json"
   jq -r '.node[] | "\(.id)\t\(.status)\t\(.publicIP)\t\(.privateIP)\t\(.cspResourceId)"' "$RUN_DIR/$ns-$infra.json"

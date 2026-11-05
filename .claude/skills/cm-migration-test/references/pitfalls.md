@@ -19,6 +19,8 @@
 
 | 증상 | 원인 | 해결 | 근거 |
 |------|------|------|------|
+| `infraDynamicReview` 404 `Not valid namespace` | Review 는 네임스페이스가 있어야 한다 | `02-create-vms.sh` 가 Review 전에 네임스페이스를 만든다 (CSP 과금 없음) | 2026-11-05 실행 |
+| `infraDynamic` 400 `VpcLimitExceeded` | AWS 는 리전마다 VPC 가 기본 5개다. dynamic 은 네임스페이스마다 vNet 을 하나 만든다 (`<ns>-shared-<conn>`). 2026-11-05 서울은 남의 VPC 로 5/5 | 만들기 전에 `inspectResources` 의 vNet `onCspTotal` 을 본다. 네임스페이스 수(cm·onpremise·csp, 대상 aws 면 mig01 까지)만큼 여유가 있는 리전을 `SRC_REGION`·`TARGET_REGION_aws` 로 쓴다 | 2026-11-05 실행 |
 | `/ns/default/mci` 404 | 0.13 에서 `mci` 가 `infra` 로 바뀌었다 | `/infra`, `infraDynamic` 을 쓴다 | e65f5bcd 11-04 |
 | Review 에서 `creationViable:false` | 그 스펙의 과거 실패 이력 | 다른 스펙. `test.env` 의 vCPU·메모리나 `SRC_IMAGE_ID` 를 바꾼다 | e65f5bcd |
 | 80 포트 응답 없음 | dynamic SG 는 22 만 연다 | `02-create-vms.sh` 가 source-vms.conf 의 포트를 연다 | e65f5bcd |
