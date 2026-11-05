@@ -28,6 +28,17 @@ api() {
   if [ "${code:0:1}" != 2 ]; then log "$m :$port$p -> HTTP $code"; head -c 3000 "$out.tmp" >&2; echo >&2; mv "$out.tmp" "$out.err"; return 1; fi
   mv "$out.tmp" "$out"; log "$m :$port$p -> $code ($(basename "$out"))"
 }
+# 워크플로를 만들자마자 실행하면 Airflow 가 DAG 파일을 아직 못 읽어 "dag_id is not exist" 로 500 이 난다
+# (2026-11-06 실측: 15 직후 16 이 실패, 30초 뒤 다시 하면 성공). 그 응답일 때만 15초 간격으로 10번까지 다시 한다.
+run_wf() { # wf outfile
+  local i
+  for i in $(seq 1 10); do
+    api 8083 POST "/cicada/workflow/$1/run" "$2" && return 0
+    grep -q 'dag_id is not exist' "$2.err" 2>/dev/null || return 1
+    log "DAG 가 아직 Airflow 에 없음, 15초 뒤 다시 ($i/10)"; sleep 15
+  done
+  return 1
+}
 step() { [ -s "$D/$1" ] && { log "$1 있음, 건너뜀"; return 1; }; return 0; }
 jid() { jq -r '.id // .data.id // .ID // empty' "$1"; }
 
@@ -87,7 +98,7 @@ wait_run() { # wfId label -> 마지막 run 상태가 success/failed 가 될 때�
 # 8. 실행 -> 대상 VM 생성 (과금 시작)
 if step 08-run-infra.json; then
   require_yes "$csp/$region 에 대상 인프라 생성 (cicada 워크플로 $wf_infra 실행)"
-  api 8083 POST "/cicada/workflow/$wf_infra/run" "$D/08-run-infra.json"
+  run_wf "$wf_infra" "$D/08-run-infra.json"
   wait_run "$wf_infra" 08 || die "인프라 이관 워크플로 실패. airflow(:8080) 의 task 로그를 봅니다"
 fi
 api 8056 GET "/beetle/migration/ns/$MIG_NS/infra" "$D/08-infra-list.json" "" "$U_BEETLE"
@@ -127,7 +138,7 @@ fi
 wf_sw=$(jid "$D/15-wf-sw.json")
 # 16. 실행
 if step 16-run-sw.json; then
-  api 8083 POST "/cicada/workflow/$wf_sw/run" "$D/16-run-sw.json"
+  run_wf "$wf_sw" "$D/16-run-sw.json"
   wait_run "$wf_sw" 16 || log "SW 이관 워크플로가 success 가 아닙니다. 17단계 상태로 어느 소프트웨어가 실패했는지 봅니다"
 fi
 # 17. 상태
