@@ -11,9 +11,10 @@ set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 TYPES="node vNet securityGroup sshKey"
 pick_tb() { case "$1" in boot) use_boot_tb;; cm) use_cm_tb;; *) die "boot 또는 cm";; esac; }
-# csp 의 리전으로 연결 이름 찾기 (Source 는 SRC_REGION, 대상은 TARGET_REGION_<csp>)
+# csp 의 리전으로 연결 이름 찾기. boot(Source 쪽)는 SRC_REGION, cm(대상 쪽)은 TARGET_REGION_<csp>
 conns_for() {
-  local csp=$1 rv="TARGET_REGION_$1" region; region=${!rv:-$SRC_REGION}
+  local csp=$1 rv="TARGET_REGION_$1" region
+  if [ "$SIDE" = boot ]; then region=$SRC_REGION; else region=${!rv:-$SRC_REGION}; fi
   tb GET /connConfig | jq -r --arg p "$csp" --arg r "$(tr 'A-Z' 'a-z' <<<"$region")" \
     '.connectionconfig[] | select(.providerName==$p) | select(.regionRepresentative==true) | select((.regionZoneInfo.assignedRegion // .regionDetail.regionId // "" | ascii_downcase)==$r) | .configName'
 }
@@ -33,11 +34,12 @@ terminate_all() { # ns
 
 case "${1:-}" in
 baseline|residual)
-  mode=$1; pick_tb "${2:?boot|cm}"; shift 2
+  mode=$1; SIDE=${2:?boot|cm}; pick_tb "$SIDE"; shift 2
   for csp in "$@"; do
     for c in $(conns_for "$csp"); do
       for t in $TYPES; do
-        f="$RUN_DIR/baseline-$c-$t.json"
+        # 같은 연결 이름이 boot·cm 양쪽에 있으므로 파일 이름에 쪽을 넣는다
+        f="$RUN_DIR/baseline-$SIDE-$c-$t.json"
         now=$(inspect "$c" "$t" 2>/dev/null || echo '{"error":true}')
         if [ "$mode" = baseline ]; then echo "$now" > "$f"; printf '%-28s %-14s %s\n' "$c" "$t" "$now"; continue; fi
         before=$(cat "$f" 2>/dev/null || echo '{"onCspTotal":0}')
