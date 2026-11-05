@@ -29,7 +29,7 @@ credentials 확인 → CM VM → 플랫폼 기동 → tumblebug init → Source 
 
 | 파일 | 무엇 |
 |------|------|
-| `config/versions.env` | 모듈별 이미지 태그. 기준은 cb-tumblebug 0.13.8. honeybee 는 main 빌드 (CSP·RDBMS 수집이 릴리즈에 없음) |
+| `config/versions.env` | 모듈별 이미지 태그. cb-tumblebug 0.13.8·cb-spider 0.13.20 은 고정, cm-* 와 mc-terrarium 은 edge |
 | `config/test.env` | Source VM 스펙 (기본 8 vCPU / 16 GiB), CM VM 스펙 (기본 16 vCPU / 32 GiB), 리전, 네임스페이스 이름, 대상 CSP·리전, init 옵션 |
 | `config/source-vms.conf` | Source VM 구성. 한 줄이 nodeGroup 의 노드 하나 (`g1-<idx>`) |
 
