@@ -36,6 +36,10 @@
 | 이미 있던 소스 그룹이 401 | 저장된 AWS 키가 무효 | 새 소스 그룹을 만든다 | 81c32323 09-30 |
 | SW 이관 `can't find matched target node` | beetle 새 버전은 라벨 `cm-source-machine-ids` 를 쓰고 옛 grasshopper 는 옛 키만 읽는다 | grasshopper `6ea9d7c` 이후 | a872372c (코드만 봄) |
 | cicada xcom 경로 오류 | beetle 응답이 `{success, data}` 로 감싸져 있다 | `$.data.id`, `$.data.node[0].id` | 메모리 (실행 기록 없음) |
+| Azure·IBM 버킷 생성·수집이 `accessKey is empty` | cb-spider 와 honeybee 의 S3 경로가 Azure 는 `StorageAccountName`/`StorageAccountKey`, IBM 은 `S3AccessKey`/`S3SecretKey`(HMAC) 를 요구하는데 credentials 에는 서비스 주체·ApiKey 만 있다 | credentials 에 그 키를 더한다. 그 전까지 09 는 aws 로만 돈다 | 2026-11-06 실측 |
+| tumblebug 객체 키에 `/` 를 넣으면 presignedUrl 이 실패 | 경로 파라미터로 받아서 `/` 가 경로로 갈린다 | 키를 평평하게 쓴다 (`a.txt`, `b.bin`) | 2026-11-06 실측 |
+| 로컬에서 만든 이미지로 재기동했는데 옛 이미지가 뜬다 | cm-mayfly compose 의 `pull_policy: always` 가 Docker Hub 태그를 다시 받는다 | `docker compose -p cloud-migrator up -d --no-deps --pull never <svc>`. 프로젝트 이름은 `cloud-migrator` (`-p` 없이 돌리면 openbao 컨테이너 이름이 충돌) | 2026-11-06 실측 |
+| 버전 관리 켠 버킷이 안 지워진다 | 객체 버전이 남아 있다 | `GET .../versions` 의 versionId 마다 `DELETE .../versions/{key}?versionId=` 뒤 버킷 삭제 | 2026-11-06 실측 |
 | KT 대상 추천 실패 | beetle 이 KT 를 지원 목록에서 뺐다 | 시험 표에 "미지원" 으로 적는다 | cm-beetle `infra.go:66-76` |
 
 ## 정리

@@ -75,6 +75,7 @@ Source VM 구성 (`source-vms.conf`):
 | 10 | honeybee 등록 | `06-honeybee.sh register onpremise onprem`, `06-honeybee.sh register csp csp` | `count_connection_success` 와 `count_agent_success` 가 연결 수와 같음 | |
 | 11 | 수집 | 소스 그룹 4개 각각 `06-honeybee.sh collect <sg>` | 200 | |
 | 12 | 수집 판정 | `06-honeybee.sh check <sg>` | 연결마다 OK. collect 그룹은 haproxy·minio 컨테이너와 rdbms 의 mariadb·mysql 이 나옴 | |
+| 12′ | 버킷 수집 | `09-objectstorage.sh run aws --yes` → `09-objectstorage.sh cleanup aws --yes` | 판정 줄이 전부 OK, cleanup 뒤 tumblebug 목록에 버킷 없음 | **물음** |
 | 13 | 이관 | `07-migrate.sh <ns> <csp>` → 8단계 앞에서 멈춤 → 승인 → `--yes` | 17단계 상태가 소프트웨어마다 성공 | **물음** (CSP마다) |
 | 14 | 이관 확인 | 대상 VM 에서 서비스 응답 (80·8080·3306, NFS export) | 소스와 같은 응답 | |
 | 15 | 정리 | `08-cleanup.sh targets --yes`, `sources onpremise --yes`, `sources csp --yes` | 명령 성공 | **물음** |
@@ -100,6 +101,7 @@ Source VM 구성 (`source-vms.conf`):
 | SW 수집 (vm1~4) | | |
 | 컨테이너 수집 (haproxy, minio) | | |
 | RDBMS 수집 (mariadb, mysql) | | |
+| 버킷 상세 수집 (aws) | - | 12′ 판정 |
 | 이관 aws / azure / gcp / alibaba / tencent / nhn / ncp / kt | 칸마다 성공·실패·미지원과 실패 단계 | |
 | 잔여 자원 증가 | | |
 

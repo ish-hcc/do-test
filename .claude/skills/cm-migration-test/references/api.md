@@ -36,6 +36,8 @@
 | 3. refined 인프라 | `GET /honeybee/source_group/{sg}/infra/refined` → `.onpremiseInfraModel` | 문서 |
 | 9. SW 수집 | `POST /honeybee/source_group/{sg}/import/software` | 문서 |
 | 10. refined SW | `GET /honeybee/source_group/{sg}/software/refined` → `.sourceSoftwareModel` | 문서 |
+| 버킷 (csp) | 소스 그룹 csp 에 연결 `resource_type:"object_storage", resource_id:<CSP 버킷 이름>`. `import/infra` 로 수집하고 `?count_objects=false` 면 객체 개수·크기를 안 센다 | **검증됨** aws (2026-11-06, honeybee `407a71d`). azure·ibm 은 credentials 에 스토리지 키가 없어 못 함 |
+| refined 버킷 | `GET /honeybee/source_group/{sg}/connection_info/{conn}/data/refined`, 그룹은 `/source_group/{sg}/data/refined` → `.sourceObjectStorageModel` (cm-beetle `storagemodel.SourceObjectStorageModel`) | **검증됨** aws (2026-11-06) |
 | RDBMS | `GET /honeybee/source_group/{sg}/rdbms/refined` | 소스. 설치형은 SW 수집 결과에서 mysql·mariadb·postgresql 패키지와 컨테이너 이미지로 찾는다 (`controller/getRDBMSInstalled.go:79-93`) |
 
 CSP 연결에 SSH 정보가 없으면 VM 안 agent 를 못 써서 CSP 메타데이터만 수집된다 (`controller/import.go:112`). 그래서 csp 방식에도 SSH 정보를 함께 넣는다.
