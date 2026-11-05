@@ -61,4 +61,6 @@
 | SG 삭제 409, vNet 삭제 500 "deletion unconfirmed" | Azure 에서 spider 의 `allsecuritygroup`/`allvpc` 가 500 | 해결 안 됨. force 로 넘어가지 말고 사용자에게 묻는다 | e65f5bcd 11-05 |
 | vNet 삭제 500 "has 2 subnet(s)" | 서브넷이 남아 있다 | `?action=withSubnets` 또는 `DELETE /ns/{ns}/sharedResources` | e65f5bcd |
 | terminate 뒤에도 CSP 목록에 VM 이 보인다 | AWS 는 종료된 VM 을 한동안 `terminated` 로 보여준다 | 잠시 뒤 다시 본다 | 04257493 10-07 |
+| targets 정리 뒤 대상 쪽 vNet·SG·sshKey 가 그대로 남는다 | beetle 이 만든 `<seed>-vnet-01`·`-sg-NN`·`-sshkey-01` 은 `DELETE /ns/{ns}/sharedResources` 대상이 아니다 (total 0) | `08-cleanup.sh` 가 ns 의 자원을 하나씩 지운다 | 2026-11-06 실측 |
+| NCP vNet 삭제 500 "still exists on the CSP after DELETE" | NCP 가 VPC 를 비동기로 지운다 | 몇 분 뒤 같은 DELETE 를 한 번 더 하면 지워진다. force 는 쓰지 않는다 | 2026-11-06 실측 |
 | 공용 vNet 안에 남의 VM 이 있다 | 같은 계정을 여러 사람이 쓴다 | 지우기 직전에 vNet 안의 VM 을 확인하고, 남의 것이 있으면 vNet 은 남긴다 | 04257493 |

@@ -30,6 +30,15 @@ terminate_all() { # ns
   done
   log "$ns 공용 자원(vNet·SG·sshKey) 삭제"
   TB_TIMEOUT=900 tb DELETE "/ns/$ns/sharedResources" | jq -c '.' || log "공용 자원 삭제 실패 (위 메시지)"
+  # beetle 이 이관하며 만든 자원(<seed>-vnet-01, -sg-NN, -sshkey-01)은 sharedResources 가 지우지 않는다 (2026-11-06 실측: total 0)
+  local t r q
+  for t in sshKey securityGroup vNet; do
+    q=""; [ "$t" = vNet ] && q="?action=withSubnets"
+    for r in $(tb GET "/ns/$ns/resources/$t?option=id" | jq -r '.output[]? // empty'); do
+      log "삭제 $ns/$t/$r"
+      TB_TIMEOUT=600 tb DELETE "/ns/$ns/resources/$t/$r$q" | jq -c '.message // .' || log "$ns/$t/$r 삭제 실패 (위 메시지)"
+    done
+  done
 }
 
 case "${1:-}" in
