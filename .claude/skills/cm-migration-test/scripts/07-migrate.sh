@@ -24,9 +24,8 @@ U_DAMSEL="$(state_get CM_DAMSELFLY_API_USERNAME):$(state_get CM_DAMSELFLY_API_PA
 # api PORT METHOD PATH OUTFILE [BODYFILE] [user:pass]
 api() {
   local port=$1 m=$2 p=$3 out=$4 body=${5:-} auth=${6:-} code args=()
-  [ -n "$auth" ] && [ "$auth" != ":" ] && args+=(-u "$auth")
   [ -n "$body" ] && args+=(-H 'Content-Type: application/json' --data-binary "@$body")
-  code=$(curl -sS -m "${API_TIMEOUT:-1800}" -o "$out.tmp" -w '%{http_code}' -X "$m" "${args[@]}" "http://$ip:$port$p") || code=000
+  code=$(curl -sS -m "${API_TIMEOUT:-1800}" -o "$out.tmp" -w '%{http_code}' -X "$m" --config <(curl_user_cfg "$auth") "${args[@]}" "http://$ip:$port$p") || code=000
   if [ "${code:0:1}" != 2 ]; then log "$m :$port$p -> HTTP $code"; head -c 3000 "$out.tmp" >&2; echo >&2; mv "$out.tmp" "$out.err"; return 1; fi
   mv "$out.tmp" "$out"; log "$m :$port$p -> $code ($(basename "$out"))"
 }

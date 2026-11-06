@@ -46,15 +46,24 @@ use_cm_tb() {
   TB_USER=$(state_get CM_TB_USER); TB_PASS=$(state_get CM_TB_PASS)
   [ -n "$TB_USER" ] || die "CM tumblebug 계정이 state 에 없습니다 (04 단계 먼저)"
 }
+# curl 설정 파일 한 줄 `user = "id:pw"` 을 낸다. curl --config <(curl_user_cfg "id:pw") 로 넘기면
+# 비밀번호가 curl 의 argv(ps, /proc/*/cmdline)에 안 남는다. printf 는 셸 내장이라 그 자체도 argv 에 안 뜬다.
+# 빈 값이나 ":" 이면 아무것도 내지 않는다 (인증 없이 부른다).
+curl_user_cfg() {
+  local up=$1
+  [ -n "$up" ] && [ "$up" != ":" ] || return 0
+  up=${up//\\/\\\\}; up=${up//\"/\\\"}
+  printf 'user = "%s"\n' "$up"
+}
 # tb METHOD PATH [JSON]  -> 응답 본문. HTTP 4xx/5xx 면 본문을 stderr 로 내고 실패한다.
 tb() {
   local m=$1 p=$2 body=${3:-} out code
   out=$(mktemp)
   if [ -n "$body" ]; then
-    code=$(curl -sS -m "${TB_TIMEOUT:-900}" -o "$out" -w '%{http_code}' -u "$TB_USER:$TB_PASS" -X "$m" \
+    code=$(curl -sS -m "${TB_TIMEOUT:-900}" -o "$out" -w '%{http_code}' --config <(curl_user_cfg "$TB_USER:$TB_PASS") -X "$m" \
       -H 'Content-Type: application/json' "$TB_URL$p" --data-binary "$body")
   else
-    code=$(curl -sS -m "${TB_TIMEOUT:-900}" -o "$out" -w '%{http_code}' -u "$TB_USER:$TB_PASS" -X "$m" "$TB_URL$p")
+    code=$(curl -sS -m "${TB_TIMEOUT:-900}" -o "$out" -w '%{http_code}' --config <(curl_user_cfg "$TB_USER:$TB_PASS") -X "$m" "$TB_URL$p")
   fi
   if [ "${code:0:1}" != 2 ]; then log "$m $p -> HTTP $code"; head -c 2000 "$out" >&2; echo >&2; rm -f "$out"; return 1; fi
   cat "$out"; rm -f "$out"
