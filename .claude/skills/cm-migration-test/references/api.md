@@ -43,6 +43,50 @@
 CSP 연결에 SSH 정보가 없으면 VM 안 agent 를 못 써서 CSP 메타데이터만 수집된다 (`controller/import.go:112`). 그래서 csp 방식에도 SSH 정보를 함께 넣는다.
 CSP 수집과 RDBMS 수집은 v0.6.3 까지의 릴리즈에 없다. main 을 빌드한 이미지가 필요하다.
 
+## cm-honeybee CSP 소스 그룹 수집 (`scripts/10-csp-collect.sh`)
+
+| 단계 | 호출 | 상태 |
+|------|------|------|
+| VM | tumblebug `recommendSpec`(providerName·regionName·vCPU≥2·memoryGiB≥2·x86_64, cost) → `POST /ns/system/resources/searchImage` `{providerName, regionName, osType:"ubuntu 22.04", matchedSpecId, includeBasicImageOnly:true}` → `infraDynamicReview` → `infraDynamic` (nodeGroup `g1` 1대, `connectionName` 지정) | 실측 2026-11-06 (8 CSP) |
+| data disk | tumblebug `POST /ns/{ns}/infra/{infra}/node/g1-1/dataDisk` `{name, connectionName, diskSize, diskType:"default"}` (만들고 붙임) | 실측 2026-11-06 |
+| credential 원본 | tumblebug OpenBao `GET /v1/secret/data/csp/<csp>` (헤더 `X-Vault-Token`, 토큰은 tumblebug 컨테이너 env `VAULT_TOKEN`) → `.data.data` | 실측 2026-11-06 |
+| honeybee 가 받는 키 | `GET /honeybee/csp/<csp>` → `credential_keys`. 이름은 대소문자 무관(`/csp/KT` = `/csp/kt`) | 실측 2026-11-06 |
+| 소스 그룹 | `POST /honeybee/source_group` `{name, type:"csp", provider_name, region_name:"<region>/<zone>", credential:[{key,value}]}` | 실측 2026-11-06 |
+| 연결 | `POST /honeybee/source_group/{sg}/connection_info` `{name, resource_type:"vm", resource_id:<CSP VM id>}` | 실측 2026-11-06 |
+| discover | `GET /honeybee/source_group/{sg}/discover?resource_type=vm` → `.items[]{resource_id, name, region, extra}` | 실측 2026-11-06 |
+| 수집 | `POST /honeybee/source_group/{sg}/import/infra?count_objects=false` | 실측 2026-11-06 |
+| 결과 | `GET /honeybee/source_group/{sg}/connection_info/{conn}/infra` → `.csp` | 실측 2026-11-06 |
+
+credential 매핑 (honeybee 키 ← tumblebug OpenBao 키). 스크립트의 `cred_map` 과 같다.
+
+| csp | 매핑 | 확인 |
+|-----|------|------|
+| aws | `aws_access_key_id`←`AWS_ACCESS_KEY_ID`, `aws_secret_access_key`←`AWS_SECRET_ACCESS_KEY` | 수집 실측 |
+| azure | `clientId`←`ARM_CLIENT_ID`, `clientSecret`←`ARM_CLIENT_SECRET`, `tenantId`←`ARM_TENANT_ID`, `subscriptionId`←`ARM_SUBSCRIPTION_ID` | 수집 실측 |
+| gcp | `private_key`, `project_id`, `client_email` (이름 같음) | 수집 실측 |
+| alibaba | `AccessKeyId`←`ALIBABA_CLOUD_ACCESS_KEY_ID`, `AccessKeySecret`←`ALIBABA_CLOUD_ACCESS_KEY_SECRET` | 수집 실측 |
+| ibm | `ApiKey`←`IC_API_KEY` | 수집 실측 |
+| ncp | `ncloud_access_key`←`NCLOUD_ACCESS_KEY`, `ncloud_secret_key`←`NCLOUD_SECRET_KEY` | 수집 실측 |
+| nhn | `IdentityEndpoint`·`Username`·`Password`·`DomainName`·`TenantId` ← `NHN_*` | 수집 실측 |
+| openstack | `IdentityEndpoint`←`OS_AUTH_URL`, `Username`·`Password`·`DomainName`·`ProjectID` ← `OS_*` | 수집 실측 |
+| tencent | `SecretId`←`TENCENTCLOUD_SECRET_ID`, `SecretKey`←`TENCENTCLOUD_SECRET_KEY` | **dry-run 만** (2026-11-06) |
+| kt | `IdentityEndpoint`·`Username`·`Password`·`DomainName`·`ProjectID` ← `KT_*`. tumblebug `kt` 는 `kt-driver`("KT Cloud (VPC)", cloudinfo.yaml) 라 honeybee `kt` 에 맞춘다. honeybee `ktclassic`(`API_Key`/`Secret_Key`)은 OpenBao 에 대응 키가 없다 | **dry-run 만** (2026-11-06) |
+
+리전 기본값(`HBC_REGION_<csp>`): aws ap-northeast-1, azure koreacentral, gcp asia-northeast3, alibaba ap-northeast-2, ibm jp-tok, ncp kr, nhn kr1, openstack regionone, tencent ap-seoul(connConfig `tencent-ap-seoul`, ap-seoul-1), kt kr1(connConfig `kt-kr1`, KR1/DX-M1). tencent·kt 는 실측 안 함.
+
+판정 기준 (`scripts/csp-judge.py`, honeybee `.csp` 와 tumblebug 값 대조). O = 값이 있고 tumblebug 과 맞음, △ = 일부만 있거나 다름, X = 비었음, - = 소스 그룹 없음.
+
+| 행 | honeybee 필드 | O 조건 (tumblebug 쪽) |
+|----|---------------|------------------------|
+| 1 Image | `image`, `image_detail` | 둘 다 있고 `image`·`image_detail.id/name` 중 하나가 노드 `cspImageName`/`imageId` |
+| 2 Spec | `vm_spec`, `vm_spec_detail.vcpus/memory_mib` | `vm_spec`=`cspSpecName`, vcpus=`spec.vCPU`, memory_mib 가 `spec.memoryGiB`×1024 의 ±10% |
+| 3 VPC | `network.vpc.name/cidr` | name 이 vNet `cspResourceName`/`cspResourceId`, cidr=`cidrBlock`. gcp·ibm·openstack 은 cidr 자리에 "... does not support IPv4_CIDR" 가 와서 O 로 본다 |
+| 4 Subnet | `network.subnet`, `vpc.subnets[].cidr` | subnet 이 vNet 의 subnet 중 하나, tumblebug subnet cidr 가 전부 honeybee 쪽에 있음 |
+| 5 SG | `network.security_groups[].rules` | 모든 SG 에 rules 가 있고 SG 이름이 tumblebug SG 중 하나 |
+| 6 KeyPair | `keypair.name` | sshKey `cspResourceName`/`cspResourceId` 또는 노드 `cspSshKeyId` |
+| 7 VM | `name`, `id`, `public_ip`/`private_ip`, `status` | 다 있고 id·IP 가 노드 값과 같음 |
+| 8 Disk | `root_disk.size`, `data_disk_details[].size` | root > 0, data disk 크기 목록이 tumblebug dataDisk `diskSize` 목록과 같음 |
+
 ## 이관 (문서 4~17단계, `scripts/07-migrate.sh`)
 
 | # | 호출 | 상태 |

@@ -54,6 +54,22 @@
 | nhn 대상에서 `amazon-ssm-agent`·`lxd` failed | AWS Source 에서 수집한 AWS 전용·snap 패키지를 다른 CSP 로 옮기려 한다 | 실패해도 서비스에는 영향 없음. 이관 목록에서 빼는 것은 grasshopper 쪽 | 2026-11-06 실측 |
 | KT 대상 추천 실패 | beetle 이 KT 를 지원 목록에서 뺐다 | 시험 표에 "미지원" 으로 적는다 | cm-beetle `infra.go:66-76` |
 
+## CSP 소스 그룹 수집 (`10-csp-collect.sh`)
+
+| 증상 | 원인 | 해결 | 근거 |
+|------|------|------|------|
+| aws ap-northeast-2 에 VM 생성이 `VpcLimitExceeded` | 서울 VPC 가 이미 5/5 (남의 VPC 포함) | `HBC_REGION_aws` 를 ap-northeast-1 로 둔다 (기본값) | 2026-11-06 실측 |
+| NCP data disk 생성 실패 | NCP data disk 최소 100GB | 스크립트가 ncp 만 100GB 로 올린다 | 2026-11-06 실측 |
+| alibaba 소스 그룹 zone 이 VM 과 다르다 | tumblebug connConfig `assignedZone` 과 VM 이 실제로 놓인 zone 이 다를 수 있다 (VM 은 ap-northeast-2c) | region_name 의 zone 은 tumblebug 노드의 `region.zone` 을 쓴다 | 2026-11-06 실측 |
+| azure 소스 그룹 zone 이 비어 있다 | azure connConfig 의 `assignedZone` 이 빈 값이다 | 위와 같이 노드의 zone(`1`)을 쓴다 | 2026-11-06 실측 |
+| aws·alibaba·ncp 수집에서 VPC·subnet 이 빈다, 전 CSP 에서 keypair·data disk 상세가 없다 | honeybee `ace9352` 전에는 VM 의 network·image·disk IID 를 NameId·SystemId 양쪽으로 맞추지 않았고, `db97baa` 전에는 keypair·status·data disk·spec·image 상세를 안 모았다 | honeybee `bfe9cbe` 이상을 쓴다 (`ace9352` IID 매칭, `db97baa` 상세 필드, `bfe9cbe` cb-spider 메타 preload) | 2026-11-06 실측 (같은 VM 에 고치기 전·후 수집) |
+| azure·ncp import 가 20~30초 | 스펙 상세(vcpus·memory)를 얻으려고 리전 스펙 목록을 조회한다 | 기다린다. 8 CSP 동시 import 기준 azure 29~32초, ncp 20초, 나머지 17초 이하 | 2026-11-06 실측 |
+| honeybee 로그에 `driver call panicked`, azure VPC cidr 가 빈다 | cb-spider v0.13.21 azure `ListVPC` → `setterSubnet` 의 nil 역참조 (`VPCHandler.go:56`). honeybee 는 패닉을 잡아 죽지 않는다 | cb-spider PR #1918 (2026-11-06 병합). honeybee 의 cb-spider 의존을 그 뒤 버전으로 올린다. 같은 날 뒤 실행에서는 재현 안 됨 | 2026-11-06 실측 (server.log 스택) |
+| tencent VM 생성이 `InvalidAccount.InsufficientBalance` | Tencent 계정 잔액 부족 | 계정 충전 전까지 tencent 는 "계정 차단" 으로 적는다 | 2026-11-06 실측 |
+| tencent 스펙이 최저가 순으로 안 고른다 | tumblebug `recommendSpec` 이 tencent 전 스펙 `costPerHour=-1` | 스크립트가 경고를 낸다. 후보가 싼지 따로 본다 | 2026-11-06 실측 |
+| tencent·kt `searchImage` 가 0건 | 사용자 ns 에서 부르면 0건, `ns/system` 에서 불러야 나온다 | 스크립트는 `ns/system` 에서 부른다 | 2026-11-06 다른 세션 확인 (이 skill 로는 재현 안 함) |
+| tumblebug 이 `429 rate limit exceeded` | infra 단건 GET 은 초당 5회(burst 15)로 막혀 있다 (`TB_API_RATE_LIMIT_INFRA_GET`, cb-tumblebug `server.go:462`) | infra 는 목록 GET 한 번으로 받는다 (judge 가 그렇게 한다) | 2026-11-06 실측 |
+
 ## 정리
 
 | 증상 | 원인 | 해결 | 근거 |

@@ -1,6 +1,6 @@
 ---
 name: cm-migration-test
-description: cm-mayfly 로 Cloud-Migrator 통합 플랫폼을 AWS VM 에 띄우고 cb-tumblebug 을 초기화한 뒤, AWS 에 만든 Source VM 을 cm-honeybee 로 수집해 여러 CSP 로 마이그레이션하는 통합 시험을 끝까지 돌리고 정리한다. TRIGGER - "마이그레이션 테스트", "통합 테스트 돌려", "mayfly 로 구축하고 테스트", "tumblebug 초기화하고 이관 시험", "honeybee 수집 확인", 4차년도 통합 테스트 재현. SKIP - 모듈 하나의 코드 수정·리뷰(그 repo 작업), 이미 떠 있는 노드에 이미지 반영만 할 때(deploy-verify), 기능이 동작하는지만 볼 때(verify-impl).
+description: cm-mayfly 로 Cloud-Migrator 통합 플랫폼을 AWS VM 에 띄우고 cb-tumblebug 을 초기화한 뒤, AWS 에 만든 Source VM 을 cm-honeybee 로 수집해 여러 CSP 로 마이그레이션하는 통합 시험을 끝까지 돌리고 정리한다. TRIGGER - "마이그레이션 테스트", "통합 테스트 돌려", "mayfly 로 구축하고 테스트", "tumblebug 초기화하고 이관 시험", "honeybee 수집 확인", "honeybee CSP 수집 시험", "CSP 소스 그룹 수집 판정", 4차년도 통합 테스트 재현. SKIP - 모듈 하나의 코드 수정·리뷰(그 repo 작업), 이미 떠 있는 노드에 이미지 반영만 할 때(deploy-verify), 기능이 동작하는지만 볼 때(verify-impl).
 ---
 
 # cm-migration-test
@@ -30,7 +30,7 @@ credentials 확인 → CM VM → 플랫폼 기동 → tumblebug init → Source 
 | 파일 | 무엇 |
 |------|------|
 | `config/versions.env` | 모듈별 이미지 태그. cb-tumblebug 0.13.8·cb-spider 0.13.20 은 고정, cm-* 와 mc-terrarium 은 edge |
-| `config/test.env` | Source VM 스펙 (기본 8 vCPU / 16 GiB), CM VM 스펙 (기본 16 vCPU / 32 GiB), 리전, 네임스페이스 이름, 대상 CSP·리전, init 옵션 |
+| `config/test.env` | Source VM 스펙 (기본 8 vCPU / 16 GiB), CM VM 스펙 (기본 16 vCPU / 32 GiB), 리전, 네임스페이스 이름, 대상 CSP·리전, init 옵션, CSP 수집 시험(`HBC_*`) |
 | `config/source-vms.conf` | Source VM 구성. 한 줄이 nodeGroup 의 노드 하나 (`g1-<idx>`) |
 
 환경변수로 덮어쓸 수 있다: `SRC_VCPU=4 SRC_MEM_GIB=8 scripts/02-create-vms.sh source onpremise`.
@@ -89,6 +89,32 @@ Source VM 구성 (`source-vms.conf`):
 그다음 나머지 CSP 와 `csp` 네임스페이스로 넓힌다. 처음부터 16개 조합(네임스페이스 2 × CSP 8)을 돌리면 같은 실패가 16번 난다.
 
 **KT 는 cm-beetle 이 인프라 추천에서 빼 두었다.** 07 이 경고를 내고, 실패하면 결과 표에 "미지원" 으로 적는다.
+
+## CSP 소스 그룹 수집 시험 (`10-csp-collect.sh`)
+
+통합 시험과 따로 돈다. cm-honeybee 의 type csp 소스 그룹이 CSP 마다 VM 메타데이터를 다 채우는지 보고,
+"Cloud-Migrator 세부 목표" 의 CM-Honeybee 1~8행(Image, Spec, VPC, Subnet, SG, KeyPair, VM, Disk)을 O/△/X 로 판정한다.
+CM VM 없이 로컬에서 돈다: VM 은 부트스트랩 tumblebug(`BOOT_TB_URL`)이 만들고, honeybee 는 `HBC_HB_URL`(기본 로컬 8081)이다.
+honeybee 는 `bfe9cbe` 이상이어야 한다. 그 전 빌드는 aws·alibaba·ncp 에서 VPC 등이 비어 X 가 나온다 (`references/pitfalls.md`).
+
+언제 쓰나: honeybee 의 CSP 수집 코드나 cb-spider 버전을 바꾼 뒤, 또는 세부 목표 표를 채울 근거가 필요할 때.
+
+| # | 명령 | 통과 조건 | 승인 |
+|---|------|-----------|------|
+| 1 | `10-csp-collect.sh create <csp>` → 승인 → `--yes` (CSP 마다) | Review `creationViable:true`, 노드 Running, data disk 붙음 | **물음** |
+| 2 | `10-csp-collect.sh register <csp>` (dry-run) → 승인 → `--yes` | dry-run 의 credential key 가 전부 `value_nonempty:true`, 연결 `connection_status:success` | **물음** |
+| 3 | `10-csp-collect.sh collect <csp...>` | discover 에 그 VM 이 나오고 import 가 success | |
+| 4 | `10-csp-collect.sh judge [csp...]` | 표의 칸이 전부 O, `tb 대조` 가 O | |
+| 5 | `10-csp-collect.sh cleanup` → 승인 → `--yes` | 소스 그룹 삭제, `08-cleanup.sh sources <ns>` 성공, data disk 삭제 | **물음** |
+
+- **judge 는 상태를 바꾸지 않는다.** honeybee 의 `connection_info/{conn}/infra` 의 `csp` 섹션과, tumblebug 이 아는 같은 VM 의 값(vNet·sshKey·SG·dataDisk 리소스)을 대조한다.
+  소스 그룹은 state(`HBC_<csp>_SG`)가 없으면 이름 `<HBC_NS>-<csp>` 로 찾으므로, 손으로 등록한 그룹도 판정한다. 판정 기준은 `references/api.md`.
+- **credential 은 tumblebug OpenBao(`secret/data/csp/<csp>`)에서 읽어 honeybee 키로 바꿔 파이프로 넘긴다.** 값은 argv·파일·화면에 안 남는다.
+  dry-run 은 key 이름과 값이 비었는지만 보인다. 매핑 표는 스크립트의 `cred_map` 이고, honeybee 의 `GET /honeybee/csp/<csp>` 와 키가 다르면 멈춘다.
+- region_name 은 `<region>/<zone>` 이고 zone 은 **VM 의 실제 zone** 을 쓴다 (connConfig 의 assignedZone 이 아님).
+- `cleanup` 은 `<HBC_NS>` 네임스페이스의 infra 를 **전부** terminate 한다. 그 ns 에 다른 사람이 만든 infra 가 없는지 계획 출력에서 본다.
+- 실측(2026-11-06, honeybee `bfe9cbe`): aws(ap-northeast-1) azure gcp alibaba ibm ncp nhn openstack 8개가 1~8행 전부 O.
+  **tencent·kt 는 아직 실측 안 했다.** 매핑과 dry-run(key 전부 non-empty)까지만 확인했다. tencent 는 계정 잔액 부족으로 VM 생성부터 실패했다.
 
 ## 결과 보고
 
