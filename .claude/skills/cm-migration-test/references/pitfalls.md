@@ -74,9 +74,11 @@
 
 | 증상 | 원인 | 해결 | 근거 |
 |------|------|------|------|
-| SG 삭제 409, vNet 삭제 500 "deletion unconfirmed" | Azure 에서 spider 의 `allsecuritygroup`/`allvpc` 가 500 | 해결 안 됨. force 로 넘어가지 말고 사용자에게 묻는다 | e65f5bcd 11-05 |
+| Azure SG 삭제 409, vNet 삭제 500 "deletion unconfirmed ... (deletion unconfirmed; record retained)". 레코드가 `status: Failed` 로 ns 에 남는다 | tumblebug 이 지운 뒤 CSP 에 정말 없는지 spider 의 `allvpc`/`allsecuritygroup` 로 확인하는데, cb-spider azure 드라이버의 nil 포인터 패닉(upstream PR #1918. `ListVPC` 쪽은 위 수집 절의 server.log 스택으로 확인)으로 500 이 나서 확인을 못 하고 레코드를 남긴다. CSP 쪽은 지워졌을 수도, 남았을 수도 있다 | 레코드의 `cspResourceId`(ARM 리소스 id 전체)로 ARM 에 직접 묻는다: OpenBao `secret/data/csp/azure` 의 `ARM_TENANT_ID`·`ARM_CLIENT_ID`·`ARM_CLIENT_SECRET` 로 `POST https://login.microsoftonline.com/<tenant>/oauth2/v2.0/token` (client_credentials, scope `https://management.azure.com/.default`, 바디는 stdin 파이프로) → `GET https://management.azure.com<cspResourceId>?api-version=2023-09-01` 가 404 `ResourceNotFound` 면 CSP 에 없다. 없을 때만 승인받고 tumblebug 레코드를 force 로 버린다. 200 이면 CSP 에 남은 것이라 force 를 쓰면 안 된다. `08-cleanup.sh` 는 이 레코드를 "남음" 으로 세고 1 로 끝난다 | e65f5bcd 11-05, 2026-11-06 실측 (hbcheck vNet·SG 의 `systemMessage`). ARM 조회 자체는 아직 안 돌려 봤다 |
 | vNet 삭제 500 "has 2 subnet(s)" | 서브넷이 남아 있다 | `?action=withSubnets` 또는 `DELETE /ns/{ns}/sharedResources` | e65f5bcd |
 | terminate 뒤에도 CSP 목록에 VM 이 보인다 | AWS 는 종료된 VM 을 한동안 `terminated` 로 보여준다 | 잠시 뒤 다시 본다 | 04257493 10-07 |
 | targets 정리 뒤 대상 쪽 vNet·SG·sshKey 가 그대로 남는다 | beetle 이 만든 `<seed>-vnet-01`·`-sg-NN`·`-sshkey-01` 은 `DELETE /ns/{ns}/sharedResources` 대상이 아니다 (total 0) | `08-cleanup.sh` 가 ns 의 자원을 하나씩 지운다 | 2026-11-06 실측 |
-| NCP vNet 삭제 500 "still exists on the CSP after DELETE" | NCP 가 VPC 를 비동기로 지운다 | 몇 분 뒤 같은 DELETE 를 한 번 더 하면 지워진다. force 는 쓰지 않는다 | 2026-11-06 실측 |
+| NCP vNet 삭제 500 "still exists on the CSP after DELETE" | NCP 가 VPC 를 비동기로 지운다 | `08-cleanup.sh` 가 실패한 vNet 만 75초(`VNET_RETRY_WAIT`) 뒤 1회 다시 지운다. 그래도 남으면 실패로 세고 1 로 끝난다. force 는 쓰지 않는다 | 2026-11-06 실측 |
+| NCP infra terminate 가 `returnCode 1101040 "Please return the added storage and try again."` | NCP 는 추가 스토리지(data disk)가 붙은 VM 을 반납하지 못한다. 예전 `10-csp-collect.sh cleanup` 은 terminate 뒤에 data disk 를 지웠다 | terminate 전에 `PUT /ns/{ns}/infra/{infra}/node/{node}/dataDisk?option=detach` 바디 `{"dataDiskId":"<id>"}` 로 분리하고, terminate 뒤 disk 를 지운다 (`10-csp-collect.sh cleanup` 이 이 순서로 한다) | 2026-11-06 실측 |
+| `inspectResources` 의 VM 행이 안 나오거나 에러 | resourceType 은 `vm` 이 아니라 `node` 다 | `08-cleanup.sh` 의 `TYPES` 처럼 `node vNet securityGroup sshKey` 로 부른다 | 2026-11-06 실측 |
 | 공용 vNet 안에 남의 VM 이 있다 | 같은 계정을 여러 사람이 쓴다 | 지우기 직전에 vNet 안의 VM 을 확인하고, 남의 것이 있으면 vNet 은 남긴다 | 04257493 |

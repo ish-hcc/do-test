@@ -7,6 +7,7 @@
 #   08-cleanup.sh sources  <ns> [--yes]               부트스트랩 tumblebug 의 Source infra terminate + 공용 자원 삭제
 #   08-cleanup.sh cm       [--yes]                    CM VM terminate (마지막에)
 #   08-cleanup.sh residual <boot|cm> <csp> [csp...]   기준선과 비교해 늘어난 자원을 출력
+# targets·sources·cm 은 실패가 있거나 ns 에 infra·vNet·SG·sshKey 가 남으면 그 목록을 내고 1 로 끝난다.
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 TYPES="node vNet securityGroup sshKey"
@@ -21,24 +22,55 @@ conns_for() {
 inspect() { # conn type -> overview json
   TB_TIMEOUT=300 tb POST /inspectResources "$(jq -n --arg c "$1" --arg t "$2" '{connectionName:$c, resourceType:$t}')" | jq -c '.resourceOverview'
 }
+# 실패는 FAILS 에 모으고 끝에 ns 에 남은 것과 함께 요약한다. 하나라도 남으면 terminate_all 이 1 을 돌려준다.
+FAILS=()
+fail() { FAILS+=("$*"); log "실패: $* (위 메시지). force 로 넘어가지 말고 원인을 본다"; }
+ns_ids() { # ns type -> id 목록 (infra 또는 resources/<type>)
+  if [ "$2" = infra ]; then tb GET "/ns/$1/infra?option=id" | jq -r '.output[]? // .idList[]? // empty'
+  else tb GET "/ns/$1/resources/$2?option=id" | jq -r '.output[]? // empty'; fi
+}
 terminate_all() { # ns
-  local ns=$1 ids
-  ids=$(tb GET "/ns/$ns/infra?option=id" | jq -r '.output[]? // .idList[]? // empty')
+  local ns=$1 id ids t r q left
+  FAILS=()
+  ids=$(ns_ids "$ns" infra) || fail "목록 조회 $ns/infra"
   for id in $ids; do
     log "terminate $ns/$id"
-    TB_TIMEOUT=1800 tb DELETE "/ns/$ns/infra/$id?option=terminate" | jq -c '.message // .' || log "$ns/$id 삭제 실패. force 로 넘어가지 말고 원인을 본다"
+    TB_TIMEOUT=1800 tb DELETE "/ns/$ns/infra/$id?option=terminate" | jq -c '.message // .' || fail "terminate $ns/$id"
   done
   log "$ns 공용 자원(vNet·SG·sshKey) 삭제"
-  TB_TIMEOUT=900 tb DELETE "/ns/$ns/sharedResources" | jq -c '.' || log "공용 자원 삭제 실패 (위 메시지)"
+  # 실패해도 세지 않는다. 아래에서 같은 자원을 하나씩 다시 지우고, 끝에 남은 것을 센다
+  TB_TIMEOUT=900 tb DELETE "/ns/$ns/sharedResources" | jq -c '.' || log "공용 자원 일괄 삭제 실패 (위 메시지). 하나씩 지운다"
   # beetle 이 이관하며 만든 자원(<seed>-vnet-01, -sg-NN, -sshkey-01)은 sharedResources 가 지우지 않는다 (2026-11-06 실측: total 0)
-  local t r q
+  local vnet_retry=()
   for t in sshKey securityGroup vNet; do
     q=""; [ "$t" = vNet ] && q="?action=withSubnets"
-    for r in $(tb GET "/ns/$ns/resources/$t?option=id" | jq -r '.output[]? // empty'); do
+    ids=$(ns_ids "$ns" "$t") || fail "목록 조회 $ns/$t"
+    for r in $ids; do
       log "삭제 $ns/$t/$r"
-      TB_TIMEOUT=600 tb DELETE "/ns/$ns/resources/$t/$r$q" | jq -c '.message // .' || log "$ns/$t/$r 삭제 실패 (위 메시지)"
+      if TB_TIMEOUT=600 tb DELETE "/ns/$ns/resources/$t/$r$q" | jq -c '.message // .'; then continue; fi
+      if [ "$t" = vNet ]; then vnet_retry+=("$r"); log "$ns/vNet/$r 삭제 실패. 재시도 대기열에 넣는다"
+      else fail "삭제 $ns/$t/$r"; fi
     done
   done
+  # NCP vNet 은 비동기로 지워져서, 직전에 지운 서브넷·SG 가 남아 있으면 "still exists" 로 실패한다 (2026-11-06 실측). 1회만 다시 한다
+  if [ "${#vnet_retry[@]}" -gt 0 ]; then
+    log "vNet ${#vnet_retry[@]}개 ${VNET_RETRY_WAIT:-75}초 뒤 다시 삭제"; sleep "${VNET_RETRY_WAIT:-75}"
+    for r in "${vnet_retry[@]}"; do
+      log "재삭제 $ns/vNet/$r"
+      TB_TIMEOUT=600 tb DELETE "/ns/$ns/resources/vNet/$r?action=withSubnets" | jq -c '.message // .' || fail "삭제 $ns/vNet/$r (재시도 포함 2회)"
+    done
+  fi
+  # 응답이 성공이어도 레코드가 남는 경우가 있다 (Azure: "deletion unconfirmed; record retained", pitfalls.md). 목록으로 다시 본다
+  left=()
+  for t in infra vNet securityGroup sshKey; do
+    ids=$(ns_ids "$ns" "$t") || ids="<조회실패>"
+    for r in $ids; do left+=("$t/$r"); done
+  done
+  if [ "${#FAILS[@]}" -eq 0 ] && [ "${#left[@]}" -eq 0 ]; then log "$ns 정리 끝: 실패 0, 남은 것 0"; return 0; fi
+  log "$ns 정리 미완: 실패 ${#FAILS[@]}건, ns 에 남은 것 ${#left[@]}건"
+  for r in "${FAILS[@]}"; do log "  실패  $r"; done
+  for r in "${left[@]}"; do log "  남음  $ns/$r"; done
+  return 1
 }
 
 case "${1:-}" in
@@ -64,5 +96,5 @@ sources)
   ns=${2:?ns}; use_boot_tb; require_yes "부트스트랩 tumblebug $ns 의 infra terminate"; terminate_all "$ns" ;;
 cm)
   use_boot_tb; require_yes "CM VM terminate (플랫폼과 그 안의 데이터가 사라진다)"; terminate_all "$CM_NS" ;;
-*) sed -n '2,12p' "$0"; exit 2 ;;
+*) sed -n '2,10p' "$0"; exit 2 ;;
 esac

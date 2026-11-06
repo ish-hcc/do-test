@@ -7,7 +7,8 @@
 #   10-csp-collect.sh register <csp> [--yes]            --yes 없으면 dry-run: 바디의 key 목록과 값이 비었는지만 보인다
 #   10-csp-collect.sh collect  <csp> [csp...]           discover → import/infra?count_objects=false → csp 섹션 저장
 #   10-csp-collect.sh judge    [csp...]                 (상태 안 바꿈) honeybee 의 csp 섹션과 tumblebug 값을 대조해 표로 낸다
-#   10-csp-collect.sh cleanup  [--yes]                  honeybee 소스 그룹 <ns>-* 삭제 → 08-cleanup.sh sources <ns> → data disk 삭제
+#   10-csp-collect.sh cleanup  [--yes]                  honeybee 소스 그룹 <ns>-* 삭제 → data disk 분리 → 08-cleanup.sh sources <ns>
+#                                                       → data disk 삭제. 하나라도 실패하면 요약을 내고 1 로 끝나며 state 를 안 비운다
 #
 # 대상: tumblebug 은 BOOT_TB_URL, honeybee 는 HBC_HB_URL, credential 원본은 tumblebug OpenBao(HBC_BAO_ADDR,
 # secret/data/csp/<csp>, 토큰은 BOOT_TB_CONTAINER 의 VAULT_TOKEN). 이름은 infra·소스 그룹 모두 <HBC_NS>-<csp>.
@@ -209,21 +210,50 @@ judge)
   exit "$rc"
   ;;
 cleanup)
+  # 계획: GET 만 한다. 지울 것을 전부 보이고 나서 --yes 를 본다
   sgs=$(hb GET /source_group | jq -r --arg p "$NS-" '.source_group[]? | select(.name | startswith($p)) | "\(.id) \(.name)"')
-  disks=$(tb GET "/ns/$NS/resources/dataDisk?option=id" | jq -r '.output[]? // empty' || true)
-  log "지울 것: honeybee 소스 그룹 [$(awk '{print $2}' <<<"$sgs" | tr '\n' ' ')], tumblebug $NS 의 infra 전부(terminate)·공용 자원, data disk [$(echo $disks)]"
+  infras=$(tb GET "/ns/$NS/infra") || die "tumblebug $NS infra 목록을 못 읽었습니다"
+  # 붙어 있는 data disk: infra 노드의 dataDiskIds 에서 "<infra> <node> <disk>" 로 뽑는다
+  attached=$(jq -r '.infra[]? | .id as $i | .node[]? | .id as $n | .dataDiskIds[]? | "\($i) \($n) \(.)"' <<<"$infras")
+  log "계획 (tumblebug $NS, honeybee $HB)"
+  log "  honeybee 소스 그룹: $( [ -n "$sgs" ] && awk '{printf "%s(%s) ", $2, $1}' <<<"$sgs" || echo 없음)"
+  log "  infra terminate:   $(jq -r '[.infra[]? | "\(.id)[\([.node[]? | "\(.id)=\(.connectionName // .connectionConfig.configName // "?")"] | join(","))]"] | if length == 0 then "없음" else join(" ") end' <<<"$infras")"
+  for t in vNet securityGroup sshKey dataDisk; do
+    v=$(tb GET "/ns/$NS/resources/$t?option=id" | jq -r '[.output[]? // empty] | if length == 0 then "없음" else join(" ") end') || v="<조회 실패>"
+    log "  $(printf '%-18s' "$t:") $v"
+  done
+  log "  data disk 분리:    $( [ -n "$attached" ] && awk '{printf "%s<-%s/%s ", $3, $1, $2}' <<<"$attached" || echo 없음)"
+  log "  순서: 소스 그룹 삭제 -> data disk 분리 -> 08-cleanup.sh sources $NS (terminate, vNet·SG·sshKey) -> data disk 삭제"
   require_yes "honeybee 소스 그룹과 tumblebug $NS 정리"
+  fails=()
   while read -r id name; do
     [ -n "$id" ] || continue
-    hb DELETE "/source_group/$id" >/dev/null && log "소스 그룹 $name 삭제"
+    if hb DELETE "/source_group/$id" >/dev/null; then log "소스 그룹 $name 삭제"; else fails+=("honeybee 소스 그룹 $name($id) 삭제"); fi
   done <<<"$sgs"
-  "$SKILL_DIR/scripts/08-cleanup.sh" sources "$NS" --yes
-  # terminate 뒤 남은 data disk (붙어 있던 것은 terminate 로 떨어진 뒤 지울 수 있다)
-  for d in $(tb GET "/ns/$NS/resources/dataDisk?option=id" | jq -r '.output[]? // empty' || true); do
+  # NCP 는 추가 스토리지가 붙은 VM 을 terminate 하지 못한다: returnCode 1101040 "Please return the added storage and try again."
+  # (2026-11-06 실측). 그래서 terminate 전에 분리한다
+  while read -r i n d; do
+    [ -n "$d" ] || continue
+    log "분리 $NS/$i/$n dataDisk $d"
+    TB_TIMEOUT=900 tb PUT "/ns/$NS/infra/$i/node/$n/dataDisk?option=detach" "$(jq -cn --arg d "$d" '{dataDiskId:$d}')" | jq -c 'if type == "object" then (.message // {id, dataDiskIds}) else . end' \
+      || fails+=("data disk $d 를 $i/$n 에서 분리")
+  done <<<"$attached"
+  rc=0; "$SKILL_DIR/scripts/08-cleanup.sh" sources "$NS" --yes || rc=$?
+  [ "$rc" = 0 ] || fails+=("08-cleanup.sh sources $NS 종료 $rc (위 요약)")
+  disks=$(tb GET "/ns/$NS/resources/dataDisk?option=id" | jq -r '.output[]? // empty') || fails+=("data disk 목록 조회")
+  for d in $disks; do
     log "삭제 $NS/dataDisk/$d"
-    TB_TIMEOUT=600 tb DELETE "/ns/$NS/resources/dataDisk/$d" | jq -c '.message // .' || log "$d 삭제 실패. force 로 넘어가지 말고 원인을 본다"
+    TB_TIMEOUT=600 tb DELETE "/ns/$NS/resources/dataDisk/$d" | jq -c '.message // .' || fails+=("data disk $d 삭제")
   done
+  left=$(tb GET "/ns/$NS/resources/dataDisk?option=id" | jq -r '.output[]? // empty' | tr '\n' ' ') || left="<조회 실패>"
+  [ -z "${left// /}" ] || fails+=("$NS 에 data disk 가 남음: $left")
+  if [ "${#fails[@]}" -gt 0 ]; then
+    log "정리 미완 ${#fails[@]}건. state 의 HBC_<csp>_INFRA·SG·CONN 은 그대로 둔다 (다시 cleanup 해서 이어간다)"
+    for f in "${fails[@]}"; do log "  실패  $f"; done
+    exit 1
+  fi
   for csp in $HBC_CSPS; do for k in INFRA SG CONN; do state_set "HBC_${csp}_$k" ""; done; done
+  log "정리 끝: 실패 0. state 의 HBC_<csp>_INFRA·SG·CONN 을 비웠다"
   ;;
-*) sed -n '2,15p' "$0"; exit 2 ;;
+*) sed -n '2,16p' "$0"; exit 2 ;;
 esac

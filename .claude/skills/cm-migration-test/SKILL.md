@@ -78,7 +78,7 @@ Source VM 구성 (`source-vms.conf`):
 | 12′ | 버킷 수집 | `09-objectstorage.sh run aws --yes` → `09-objectstorage.sh cleanup aws --yes` | 판정 줄이 전부 OK, cleanup 뒤 tumblebug 목록에 버킷 없음 | **물음** |
 | 13 | 이관 | `07-migrate.sh <ns> <csp>` → 8단계 앞에서 멈춤 → 승인 → `--yes` | 17단계 상태가 소프트웨어마다 성공 | **물음** (CSP마다) |
 | 14 | 이관 확인 | 대상 VM 에서 서비스 응답 (80·8080·3306, NFS export) | 소스와 같은 응답 | |
-| 15 | 정리 | `08-cleanup.sh targets --yes`, `sources onpremise --yes`, `sources csp --yes` | 명령 성공 | **물음** |
+| 15 | 정리 | `08-cleanup.sh targets --yes`, `sources onpremise --yes`, `sources csp --yes` | 종료 0. 1 이면 끝에 낸 "실패"·"남음" 목록을 보고 원인부터 본다 | **물음** |
 | 16 | 잔여 확인 | `08-cleanup.sh residual cm <TARGET_CSPS>`, `residual boot aws` | 증가 0 | |
 | 17 | CM 정리 | `08-cleanup.sh cm --yes`, 다시 `residual boot aws`. `cred.key`·`*.pem` 삭제 | 증가 0 | **물음** |
 
@@ -105,7 +105,7 @@ honeybee 는 `bfe9cbe` 이상이어야 한다. 그 전 빌드는 aws·alibaba·n
 | 2 | `10-csp-collect.sh register <csp>` (dry-run) → 승인 → `--yes` | dry-run 의 credential key 가 전부 `value_nonempty:true`, 연결 `connection_status:success` | **물음** |
 | 3 | `10-csp-collect.sh collect <csp...>` | discover 에 그 VM 이 나오고 import 가 success | |
 | 4 | `10-csp-collect.sh judge [csp...]` | 표의 칸이 전부 O, `tb 대조` 가 O | |
-| 5 | `10-csp-collect.sh cleanup` → 승인 → `--yes` | 소스 그룹 삭제, `08-cleanup.sh sources <ns>` 성공, data disk 삭제 | **물음** |
+| 5 | `10-csp-collect.sh cleanup` (계획) → 승인 → `--yes` | 계획에 지울 infra·vNet·SG·sshKey·dataDisk·소스 그룹이 다 나옴. 실행은 종료 0 (소스 그룹 삭제 → data disk 분리 → `08-cleanup.sh sources <ns>` → data disk 삭제). 1 이면 state 를 안 비우므로 원인을 고친 뒤 다시 cleanup | **물음** |
 
 - **judge 는 상태를 바꾸지 않는다.** honeybee 의 `connection_info/{conn}/infra` 의 `csp` 섹션과, tumblebug 이 아는 같은 VM 의 값(vNet·sshKey·SG·dataDisk 리소스)을 대조한다.
   소스 그룹은 state(`HBC_<csp>_SG`)가 없으면 이름 `<HBC_NS>-<csp>` 로 찾으므로, 손으로 등록한 그룹도 판정한다. 판정 기준은 `references/api.md`.
